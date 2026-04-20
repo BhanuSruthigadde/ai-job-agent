@@ -1,17 +1,13 @@
 import streamlit as st
 import pdfplumber
 import requests
-import os
-from dotenv import load_dotenv
 from sentence_transformers import SentenceTransformer, util
 
 # =========================
-# LOAD ENV VARIABLES
+# GET API KEYS FROM SECRETS (FOR DEPLOYMENT)
 # =========================
-load_dotenv()
-
-APP_ID = os.getenv("ADZUNA_APP_ID")
-APP_KEY = os.getenv("ADZUNA_APP_KEY")
+APP_ID = st.secrets["ADZUNA_APP_ID"]
+APP_KEY = st.secrets["ADZUNA_APP_KEY"]
 
 # =========================
 # MODEL (CACHED → NO LAG)
@@ -46,7 +42,7 @@ def get_resume_embedding(resume):
     return model.encode(resume, convert_to_tensor=True)
 
 # =========================
-# AI MATCH SCORE (FAST + ACCURATE)
+# AI MATCH SCORE
 # =========================
 def calculate_match(resume, job_desc):
     emb1 = get_resume_embedding(resume)
@@ -56,7 +52,7 @@ def calculate_match(resume, job_desc):
     return round(score * 100, 2)
 
 # =========================
-# REAL JOBS FROM ADZUNA
+# GET JOBS FROM ADZUNA
 # =========================
 @st.cache_data(ttl=3600)
 def get_jobs(query):
@@ -66,7 +62,7 @@ def get_jobs(query):
         "app_id": APP_ID,
         "app_key": APP_KEY,
         "what": query,
-        "results_per_page": 10,
+        "results_per_page": 5,  # optimized
         "content-type": "application/json"
     }
 
@@ -146,11 +142,19 @@ if uploaded_file:
 
     st.subheader("📊 Top Job Matches")
 
-    jobs = get_jobs(query)
+    with st.spinner("Fetching jobs and analyzing..."):
+        jobs = get_jobs(query)
 
     if not jobs:
         st.warning("No jobs found or API issue.")
     else:
+
+        # SORT JOBS BY MATCH SCORE
+        jobs = sorted(
+            jobs,
+            key=lambda job: calculate_match(st.session_state.resume_text, job["description"]),
+            reverse=True
+        )
 
         for i, job in enumerate(jobs):
 
